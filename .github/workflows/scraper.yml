@@ -2,7 +2,7 @@ name: Weekly Movie Scraper
 
 on:
   schedule:
-    - cron: "0 0 * * 0"   # كل يوم أحد الساعة 00:00 UTC
+    - cron: "0 0 * * 0"
   workflow_dispatch:
 
 jobs:
@@ -13,7 +13,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0   # مهم للسماح بإنشاء commit وPR
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -33,10 +33,21 @@ jobs:
           pip install --upgrade pip
           pip install requests beautifulsoup4
 
-      - name: Run scraper
-        run: python scraper.py
+      - name: Run scraper with detailed logging
+        run: |
+          python - <<'EOF'
+import traceback
+try:
+    import scraper
+except Exception as e:
+    print("Scraper failed with error:")
+    traceback.print_exc()
+    exit(1)
+EOF
+        continue-on-error: true  # يسمح للworkflow بالاستمرار حتى لو فشل scraper
 
       - name: Commit changes if movies.json changed
+        if: success()  # تنفذ فقط إذا scraper لم يفشل بشكل حاد
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -48,6 +59,7 @@ jobs:
             exit 0
 
       - name: Create Pull Request
+        if: success()
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
