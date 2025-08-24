@@ -8,6 +8,8 @@ on:
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # هذه هي الصلاحية الأساسية
 
     steps:
       - name: Checkout repository
