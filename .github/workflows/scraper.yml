@@ -35,19 +35,9 @@ jobs:
 
       - name: Run scraper with detailed logging
         run: |
-          python - <<'EOF'
-import traceback
-try:
-    import scraper
-except Exception as e:
-    print("Scraper failed with error:")
-    traceback.print_exc()
-    exit(1)
-EOF
-        continue-on-error: true  # يسمح للworkflow بالاستمرار حتى لو فشل scraper
+          python scraper.py || echo "Scraper failed with exit code $?"
 
       - name: Commit changes if movies.json changed
-        if: success()  # تنفذ فقط إذا scraper لم يفشل بشكل حاد
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -59,7 +49,6 @@ EOF
             exit 0
 
       - name: Create Pull Request
-        if: success()
         uses: peter-evans/create-pull-request@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
