@@ -1,8 +1,9 @@
+
 name: Weekly Movie Scraper
 
 on:
   schedule:
-    - cron: "0 0 * * 0"   # كل يوم أحد الساعة 00:00 UTC
+    - cron: "0 0 * * 0"
   workflow_dispatch:
 
 jobs:
@@ -10,8 +11,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repository with full history
         uses: actions/checkout@v3
+        with:
+          fetch-depth: 0   # مهم جدًا للسماح بالـ push
+          persist-credentials: false  # نستخدم token يدويًا
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -38,12 +42,7 @@ jobs:
             exit 0
           fi
 
-      - name: Push changes to new branch and create PR
-        uses: peter-evans/create-pull-request@v5
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: update/movies-json
-          commit-message: "Update movies.json [skip ci]"
-          title: "Weekly Movie Update"
-          body: "Automated update of movies.json by GitHub Actions"
-          base: main
+      - name: Push changes
+        run: |
+          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:main
+
