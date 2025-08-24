@@ -1,4 +1,3 @@
-
 name: Weekly Movie Scraper
 
 on:
@@ -11,11 +10,10 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository with full history
+      - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0   # مهم جدًا للسماح بالـ push
-          persist-credentials: false  # نستخدم token يدويًا
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -42,7 +40,12 @@ jobs:
             exit 0
           fi
 
-      - name: Push changes
-        run: |
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:main
-
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: update/movies-json
+          commit-message: "Update movies.json [skip ci]"
+          title: "Weekly Movie Update"
+          body: "Automated update of movies.json by GitHub Actions"
+          base: main
