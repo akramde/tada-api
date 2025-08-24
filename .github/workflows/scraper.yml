@@ -18,8 +18,18 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
-        run: pip install requests beautifulsoup4
+        run: |
+          pip install --upgrade pip
+          pip install requests beautifulsoup4
 
       - name: Run scraper
         run: python scraper.py
@@ -29,11 +39,9 @@ jobs:
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git add movies.json
-          # commit فقط إذا هناك تغييرات
-          if ! git diff-index --quiet HEAD; then
+          if ! git diff --cached --quiet; then
             git commit -m "Update movies.json [skip ci]"
-            git push
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:main
           else
-            echo "No changes to commit"
+            echo "No changes detected"
           fi
-
