@@ -1,43 +1,58 @@
-name: Git Debug Workflow
+name: Weekly Movie Scraper
 
 on:
+  schedule:
+    - cron: "0 0 * * 0"   # كل يوم أحد الساعة 00:00 UTC
   workflow_dispatch:
 
 jobs:
-  debug-git:
+  scrape:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
-          fetch-depth: 0
+          fetch-depth: 0   # مهم للسماح بإنشاء commit وPR
 
-      - name: Show Git status
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
         run: |
-          echo "=== Current Branch ==="
-          git branch
-          echo "=== Git Remote ==="
-          git remote -v
-          echo "=== Git Status ==="
-          git status
-          echo "=== Git Log ==="
-          git log -3 --oneline
-          echo "=== Git Config ==="
-          git config --list
+          pip install --upgrade pip
+          pip install requests beautifulsoup4
 
-      - name: Attempt dry-run commit
+      - name: Run scraper
+        run: python scraper.py
+
+      - name: Commit changes if movies.json changed
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git add movies.json || echo "movies.json may not exist"
+          git add movies.json
           if ! git diff --cached --quiet; then
-            git commit -m "Test commit [skip ci]" || echo "Commit failed"
+            git commit -m "Update movies.json [skip ci]"
           else
             echo "No changes detected"
-          fi
+            exit 0
 
-      - name: Attempt dry-run push
-        run: |
-          echo "=== Attempting git push dry-run ==="
-          git push --dry-run https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }} HEAD:main || echo "Push failed"
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          branch: update/movies-json
+          commit-message: "Update movies.json [skip ci]"
+          title: "Weekly Movie Update"
+          body: "Automated update of movies.json by GitHub Actions"
+          base: main
