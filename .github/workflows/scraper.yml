@@ -34,6 +34,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install requests beautifulsoup4
+          pip install requests beautifulsoup4 requests-html pyppeteer
 
       - name: Run scraper with detailed logging
         run: |
