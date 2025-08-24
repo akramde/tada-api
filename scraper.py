@@ -66,23 +66,42 @@ def scrape_page(path):
             "year": year
         })
 
-    # الرابط للصفحة التالية
-    next_link = soup.find("a", string=lambda s: s and "Следующая" in s)
-    next_path = next_link.get("href") if next_link else None
+    return movies, soup
 
-    return movies, next_path
+def get_next_path(soup):
+    """استخراج رابط الصفحة التالية بشكل مرن"""
+    # 1️⃣ تجربة rel="next"
+    next_link = soup.select_one("a[rel='next']")
+    if next_link:
+        next_path = next_link.get("href")
+        if next_path.startswith("/"):
+            return next_path
+
+    # 2️⃣ تجربة النص "Следующая"
+    next_link = soup.find("a", string=lambda s: s and "Следующая" in s)
+    if next_link:
+        next_path = next_link.get("href")
+        if next_path.startswith("/"):
+            return next_path
+
+    return None
 
 def scrape_all():
     path = START_PATH
     results = []
+
     while path:
         try:
-            m, path = scrape_page(path)
+            m, soup = scrape_page(path)
             results.extend(m)
-            time.sleep(1)  # لتجنب الحظر
+
+            path = get_next_path(soup)
+            if path:
+                time.sleep(1)  # لتجنب الحظر
         except Exception as e:
             print(f"⚠️ Error scraping {path}: {e}")
             break
+
     return results
 
 if __name__ == "__main__":
