@@ -1,10 +1,18 @@
 import requests
 from bs4 import BeautifulSoup
 import json
-import re
 import time
+from datetime import datetime, timedelta
+import re
 
-BASE_URL = "https://kinovod240825.pro"
+# 1️⃣ حساب تاريخ البارحة
+yesterday = datetime.now() - timedelta(days=1)
+dd = yesterday.strftime("%d")
+mm = yesterday.strftime("%m")
+yy = yesterday.strftime("%y")  # آخر رقمين من السنة
+
+# 2️⃣ رابط الموقع ديناميكي حسب تاريخ البارحة
+BASE_URL = f"https://kinovod{dd}{mm}{yy}.com"
 START_PATH = "/films"
 
 HEADERS = {
@@ -17,43 +25,49 @@ def scrape_page(path):
     url = BASE_URL + path
     print(f"🔍 Scraping: {url}")
     resp = requests.get(url, headers=HEADERS)
-    resp.raise_for_status()
+    if resp.status_code != 200:
+        print(f"⚠️ Failed to fetch page {url}")
+        return [], None
 
     soup = BeautifulSoup(resp.text, "html.parser")
     movies = []
 
-    # غالبًا كل فيلم داخل <li>
-    items = soup.select("ul > li")
+    items = soup.select("ul > li")  # كل فيلم غالبًا داخل <li>
+    if not items:
+        return [], soup
+
     for item in items:
         link_tag = item.select_one("a")
         img = item.select_one("img.img-responsive")
         if not link_tag or not img:
             continue
 
-        # رابط الفيلم الكامل
         poster_href = link_tag.get("href")
         if poster_href.startswith("/"):
             poster_href = BASE_URL + poster_href
 
-        # رابط الصورة الكامل
         poster_src = img.get("src")
         if poster_src.startswith("/"):
             poster_src = BASE_URL + poster_src
 
-        # العنوان
         title = link_tag.get_text(strip=True)
         if not title:
             title = img.get("alt", "").strip()
 
-        # التقييم والسنة باستخدام Regex
         info_text = item.get_text(" ", strip=True)
+        rating = None
+        year = None
+
+        # استخراج التقييم
         rating_match = re.search(r"\b\d+(\.\d+)?\b", info_text)
-        rating = rating_match.group() if rating_match else None
+        if rating_match:
+            rating = rating_match.group()
 
+        # استخراج السنة
         year_match = re.search(r"\b(19|20)\d{2}\b", info_text)
-        year = year_match.group() if year_match else None
+        if year_match:
+            year = year_match.group()
 
-        # label (إن وجد)
         label_tag = item.select_one(".label")
         label = label_tag.get_text(strip=True) if label_tag else None
 
@@ -68,44 +82,26 @@ def scrape_page(path):
 
     return movies, soup
 
-def get_next_path(soup):
-    """استخراج رابط الصفحة التالية بشكل مرن"""
-    # 1️⃣ تجربة rel="next"
-    next_link = soup.select_one("a[rel='next']")
-    if next_link:
-        next_path = next_link.get("href")
-        if next_path.startswith("/"):
-            return next_path
-
-    # 2️⃣ تجربة النص "Следующая"
-    next_link = soup.find("a", string=lambda s: s and "Следующая" in s)
-    if next_link:
-        next_path = next_link.get("href")
-        if next_path.startswith("/"):
-            return next_path
-
-    return None
-
 def scrape_all():
-    path = START_PATH
     results = []
+    page_num = 1
 
-    while path:
-        try:
-            m, soup = scrape_page(path)
-            results.extend(m)
+    while True:
+        path = f"{START_PATH}?page={page_num}"
+        movies, _ = scrape_page(path)
 
-            path = get_next_path(soup)
-            if path:
-                time.sleep(1)  # لتجنب الحظر
-        except Exception as e:
-            print(f"⚠️ Error scraping {path}: {e}")
+        if not movies:
+            print(f"⚠️ No more movies found. Stopping at page {page_num}")
             break
+
+        results.extend(movies)
+        page_num += 1
+        time.sleep(1)  # لتجنب الحظر
 
     return results
 
 if __name__ == "__main__":
     all_movies = scrape_all()
-    with open("movies.json", "w", encoding="utf-8") as f:
+    with open("videos.json", "w", encoding="utf-8") as f:
         json.dump(all_movies, f, ensure_ascii=False, indent=2)
     print(f"✅ Done! Total movies: {len(all_movies)}")
