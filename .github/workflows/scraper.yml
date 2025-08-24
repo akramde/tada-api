@@ -24,10 +24,16 @@ jobs:
       - name: Run scraper
         run: python scraper.py
 
-      - name: Commit and push videos.json
+      - name: Commit and push movies.json
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
-          git add videos.json
-          git commit -m "Update videos.json [skip ci]" || echo "No changes to commit"
-          git push
+          git add movies.json
+          # commit فقط إذا هناك تغييرات
+          if ! git diff-index --quiet HEAD; then
+            git commit -m "Update movies.json [skip ci]"
+            git push
+          else
+            echo "No changes to commit"
+          fi
+
