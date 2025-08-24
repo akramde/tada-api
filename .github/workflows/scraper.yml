@@ -1,5 +1,6 @@
 name: Weekly Movie Scraper
 
+# تشغيله أسبوعيًا أو يدويًا
 on:
   schedule:
     - cron: "0 0 * * 0"   # كل أسبوع (الأحد 00:00 UTC)
@@ -9,19 +10,22 @@ jobs:
   scrape:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # هذه هي الصلاحية الأساسية
+      contents: write  # للسماح بالكتابة على المستودع
 
     steps:
+      # 1️⃣ Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v3
         with:
           fetch-depth: 0
 
+      # 2️⃣ Setup Python
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.x"
 
+      # 3️⃣ Cache pip dependencies
       - name: Cache pip
         uses: actions/cache@v3
         with:
@@ -30,16 +34,18 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
 
+      # 4️⃣ Install dependencies
       - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install requests beautifulsoup4
-          pip install requests beautifulsoup4 requests-html pyppeteer
 
-      - name: Run scraper with detailed logging
+      # 5️⃣ Run scraper
+      - name: Run scraper
         run: |
           python scraper.py || echo "Scraper failed with exit code $?"
 
+      # 6️⃣ Commit & push movies.json if changed
       - name: Commit and Push changes
         run: |
           git config --local user.name "github-actions[bot]"
