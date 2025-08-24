@@ -26,13 +26,14 @@ def scrape_page(path):
     print(f"🔍 Scraping: {url}")
     resp = requests.get(url, headers=HEADERS)
     if resp.status_code != 200:
-        print(f"⚠️ Failed to fetch page {url}")
+        print(f"⚠️ Failed to fetch page {url} (status code {resp.status_code})")
         return [], None
 
     soup = BeautifulSoup(resp.text, "html.parser")
     movies = []
 
-    items = soup.select("ul > li")  # كل فيلم غالبًا داخل <li>
+    # تعديل CSS selector حسب HTML الحالي للموقع
+    items = soup.select("li")  # غالبًا كل فيلم داخل <li>
     if not items:
         return [], soup
 
