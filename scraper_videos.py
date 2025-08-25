@@ -6,6 +6,7 @@ from playwright.async_api import async_playwright
 import logging
 import re
 import time
+from urllib.parse import urljoin, urlparse
 
 # إعداد التسجيل
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -13,208 +14,313 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://kinovod240825.pro"
 
-# ---------------- Proxy ---------------- #
-def get_russian_proxies():
-    """الحصول على قائمة بروكسيات روسية"""
+async def solve_captcha_if_exists(page):
+    """محاولة حل الـ CAPTCHA إذا ظهرت"""
     try:
-        url = "https://www.proxy-list.download/api/v1/get?type=http&country=RU"
-        resp = requests.get(url, timeout=10)
-        resp.raise_for_status()
+        # البحث عن عناصر الـ CAPTCHA الشائعة
+        captcha_selectors = [
+            '.captcha',
+            '.g-recaptcha',
+            '[class*="captcha"]',
+            '[src*="captcha"]',
+            'iframe[src*="recaptcha"]',
+            'div[data-sitekey]'
+        ]
         
-        proxies = []
-        for line in resp.text.split('\n'):
-            line = line.strip()
-            if line:
-                proxies.append(f"http://{line}")
-        
-        logger.info(f"Found {len(proxies)} Russian proxies")
-        return proxies
-        
-    except Exception as e:
-        logger.error(f"Error fetching proxies: {e}")
-        return []
+        for selector in captcha_selectors:
+            captcha_elements = await page.query_selector_all(selector)
+            if captcha_elements:
+                logger.warning("CAPTCHA detected! Trying to handle...")
+                # يمكن إضافة منطق لحل الـ CAPTCHA هنا
+                await page.wait_for_timeout(5000)
+                return True
+        return False
+    except:
+        return False
 
-def test_proxy(proxy, test_url="https://kinovod240825.pro"):
-    """اختبار إذا كان البروكسي يعمل"""
+async def handle_advertisement(page):
+    """التعامل مع النوافذ المنبثقة والإعلانات"""
     try:
-        resp = requests.get(test_url, proxies={"http": proxy, "https": proxy}, 
-                          timeout=10, headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'})
-        if resp.status_code == 200:
-            return True
-    except Exception as e:
-        logger.debug(f"Proxy {proxy} failed: {e}")
-    return False
-
-# ---------------- Video Scraper ---------------- #
-async def extract_video_from_page(page):
-    """استخراج رابط الفيديو من الصفحة"""
-    try:
-        # الطريقة 1: البحث عن عناصر video مباشرة
-        video_elements = await page.query_selector_all("video")
-        for video in video_elements:
-            src = await video.get_attribute("src")
-            if src and (".mp4" in src or ".m3u8" in src):
-                return src
-            
-            source_elements = await video.query_selector_all("source")
-            for source in source_elements:
-                src = await source.get_attribute("src")
-                if src and (".mp4" in src or ".m3u8" in src):
-                    return src
+        # إغلاق النوافذ المنبثقة
+        popup_selectors = [
+            '.popup-close',
+            '.close-button',
+            '[aria-label*="close" i]',
+            '[class*="close" i]',
+            '[class*="dismiss" i]',
+            '[class*="skip" i]'
+        ]
         
-        # الطريقة 2: البحث في iframes
-        iframes = await page.query_selector_all("iframe")
-        for iframe in iframes:
+        for selector in popup_selectors:
             try:
-                iframe_src = await iframe.get_attribute("src")
-                if iframe_src and ("video" in iframe_src or "player" in iframe_src):
-                    # الانتقال إلى الiframe
-                    frame = await iframe.content_frame()
-                    if frame:
-                        video_in_frame = await extract_video_from_page(frame)
-                        if video_in_frame:
-                            return video_in_frame
+                close_buttons = await page.query_selector_all(selector)
+                for button in close_buttons:
+                    if await button.is_visible():
+                        await button.click()
+                        logger.info("Closed popup/advertisement")
+                        await page.wait_for_timeout(1000)
             except:
                 continue
         
-        # الطريقة 3: البحث في النصوص البرمجية JavaScript
-        scripts = await page.query_selector_all("script")
+        # التعامل مع نوافذ alert
+        page.on("dialog", lambda dialog: dialog.dismiss())
+        
+    except Exception as e:
+        logger.warning(f"Error handling advertisements: {e}")
+
+async def click_play_button(page):
+    """النقر على زر التشغيل بطرق مختلفة"""
+    play_attempted = False
+    
+    # قائمة بجميع أنواع أزرار التشغيل الممكنة
+    play_selectors = [
+        # أزرار التشغيل الشائعة
+        'button[class*="play"]',
+        'div[class*="play"]',
+        'a[class*="play"]',
+        'span[class*="play"]',
+        '.play-btn',
+        '.player-play',
+        '.start-button',
+        '.video-play',
+        '.btn-play',
+        
+        # أزرار باللغة الروسية
+        'button:has-text("Смотреть")',
+        'div:has-text("Смотреть")',
+        'a:has-text("Смотреть")',
+        'button:has-text("Смотреть онлайн")',
+        
+        # أزرار بالإنجليزية
+        'button:has-text("Play")',
+        'div:has-text("Play")',
+        'a:has-text("Play")',
+        'button:has-text("Watch")',
+        'div:has-text("Watch")',
+        'a:has-text("Watch")',
+        'button:has-text("Start")',
+        
+        # أزرار بالرموز
+        'button:has-text("▶")',
+        'div:has-text("▶")',
+        
+        # عناصر الفيديو نفسها
+        'video',
+        '.video-player',
+        '.player-container'
+    ]
+    
+    for selector in play_selectors:
+        try:
+            elements = await page.query_selector_all(selector)
+            for element in elements:
+                if await element.is_visible():
+                    await element.click()
+                    logger.info(f"Clicked play button: {selector}")
+                    play_attempted = True
+                    await page.wait_for_timeout(3000)
+                    break
+            if play_attempted:
+                break
+        except Exception as e:
+            continue
+    
+    return play_attempted
+
+async def wait_for_video_load(page, timeout=30000):
+    """انتظار تحميل الفيديو"""
+    try:
+        # انتظار ظهور عناصر الفيديو
+        await page.wait_for_selector('video', timeout=timeout)
+        logger.info("Video element found")
+        
+        # انتظار حتى يبدأ الفيديو في التحميل
+        await page.wait_for_function(
+            """() => {
+                const videos = document.querySelectorAll('video');
+                return Array.from(videos).some(v => 
+                    v.readyState > 0 || v.src || v.currentSrc
+                );
+            }""",
+            timeout=timeout
+        )
+        logger.info("Video started loading")
+        
+        return True
+    except:
+        logger.warning("Video loading timeout")
+        return False
+
+async def extract_video_urls(page):
+    """استخراج روابط الفيديو من الصفحة"""
+    video_urls = []
+    
+    try:
+        # الطريقة 1: من عناصر video مباشرة
+        video_elements = await page.query_selector_all('video')
+        for video in video_elements:
+            try:
+                # الحصول على src مباشرة
+                src = await video.get_attribute('src')
+                if src and any(ext in src for ext in ['.mp4', '.m3u8', '.ts']):
+                    video_urls.append(src)
+                
+                # الحصول من source elements
+                source_elements = await video.query_selector_all('source')
+                for source in source_elements:
+                    src = await source.get_attribute('src')
+                    if src and any(ext in src for ext in ['.mp4', '.m3u8', '.ts']):
+                        video_urls.append(src)
+                
+                # الحصول من currentSrc عبر JavaScript
+                current_src = await page.evaluate('(element) => element.currentSrc', video)
+                if current_src and any(ext in current_src for ext in ['.mp4', '.m3u8', '.ts']):
+                    video_urls.append(current_src)
+                    
+            except:
+                continue
+        
+        # الطريقة 2: البحث في الشبكة (network requests)
+        network_urls = await page.evaluate("""() => {
+            const performanceEntries = performance.getEntriesByType('resource');
+            const videoUrls = [];
+            const videoExtensions = ['.mp4', '.m3u8', '.ts', '.webm'];
+            
+            performanceEntries.forEach(entry => {
+                if (videoExtensions.some(ext => entry.name.includes(ext))) {
+                    videoUrls.push(entry.name);
+                }
+            });
+            
+            return videoUrls;
+        }""")
+        
+        video_urls.extend(network_urls)
+        
+        # الطريقة 3: البحث في الـ scripts
+        scripts = await page.query_selector_all('script')
         for script in scripts:
             try:
-                script_content = await script.inner_text()
-                if script_content:
-                    # البحث عن روابط الفيديو باستخدام regex
+                content = await script.inner_text()
+                if content:
+                    # أنماط للبحث عن روابط الفيديو
                     patterns = [
-                        r'(https?://[^\s<>"]+\.(mp4|m3u8)[^\s<>"]*)',
-                        r'src["\']?:\s*["\']([^"\']+\.(mp4|m3u8)[^"\']*)["\']',
-                        r'file["\']?:\s*["\']([^"\']+\.(mp4|m3u8)[^"\']*)["\']',
-                        r'video["\']?:\s*["\']([^"\']+\.(mp4|m3u8)[^"\']*)["\']'
+                        r'(https?://[^\s<>"]+\.(mp4|m3u8|ts|webm)[^\s<>"]*)',
+                        r'["\'](https?://[^"\']+\.(mp4|m3u8|ts|webm)[^"\']*)["\']',
+                        r'(http[^\s<>"]*\.(mp4|m3u8|ts|webm)[^\s<>"]*)',
+                        r'file["\']?:\s*["\']([^"\']+\.(mp4|m3u8|ts|webm)[^"\']*)',
+                        r'src["\']?:\s*["\']([^"\']+\.(mp4|m3u8|ts|webm)[^"\']*)',
+                        r'url["\']?:\s*["\']([^"\']+\.(mp4|m3u8|ts|webm)[^"\']*)'
                     ]
                     
                     for pattern in patterns:
-                        matches = re.findall(pattern, script_content, re.IGNORECASE)
+                        matches = re.finditer(pattern, content, re.IGNORECASE)
                         for match in matches:
-                            if isinstance(match, tuple):
-                                url = match[0]
-                            else:
-                                url = match
-                            
-                            if url and ("http" in url) and (".mp4" in url or ".m3u8" in url):
-                                return url
+                            url = match.group(1) if len(match.groups()) > 0 else match.group(0)
+                            if url and 'http' in url:
+                                video_urls.append(url)
             except:
                 continue
         
-        return None
+        # إزالة التكرارات
+        video_urls = list(set(video_urls))
+        
+        # تصفية الروابط غير المرغوب فيها
+        filtered_urls = []
+        for url in video_urls:
+            if not any(bad in url for bad in ['google', 'doubleclick', 'adservice', 'analytics']):
+                filtered_urls.append(url)
+        
+        return filtered_urls
         
     except Exception as e:
-        logger.error(f"Error extracting video: {e}")
-        return None
+        logger.error(f"Error extracting video URLs: {e}")
+        return []
 
 async def get_video_url(movie_url, proxy=None):
-    """الحصول على رابط الفيديو من URL الفيلم"""
+    """الحصول على رابط الفيديو الرئيسي"""
     async with async_playwright() as p:
         try:
             # إعداد المتصفح
-            browser_args = [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage',
-                '--disable-gpu',
-                '--disable-software-rasterizer',
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor'
-            ]
-            
             browser = await p.chromium.launch(
                 headless=True,
-                args=browser_args,
+                args=[
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--disable-software-rasterizer'
+                ],
                 timeout=60000
             )
             
-            # إعداد الصفحة
             context = await browser.new_context(
                 viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                java_script_enabled=True
             )
             
             page = await context.new_page()
             
-            # الانتقال إلى URL الفيلم
+            # الانتقال إلى صفحة الفيلم
             logger.info(f"Navigating to: {movie_url}")
             await page.goto(movie_url, wait_until='networkidle', timeout=60000)
+            await page.wait_for_timeout(3000)
             
-            # انتظار تحميل الصفحة
+            # التعامل مع الإعلانات والنوافذ المنبثقة
+            await handle_advertisement(page)
+            
+            # محاولة حل الـ CAPTCHA إذا وجدت
+            await solve_captcha_if_exists(page)
+            
+            # البحث والنقر على زر التشغيل
+            play_clicked = await click_play_button(page)
+            
+            if not play_clicked:
+                # إذا لم يتم العثور على زر تشغيل، جرب النقر على عناصر الفيديو
+                try:
+                    video_elements = await page.query_selector_all('video, .video-player, .player')
+                    for video in video_elements:
+                        if await video.is_visible():
+                            await video.click()
+                            logger.info("Clicked on video element")
+                            await page.wait_for_timeout(2000)
+                            break
+                except:
+                    pass
+            
+            # انتظار تحميل الفيديو
+            await wait_for_video_load(page, timeout=15000)
+            
+            # إعطاء وقت للإعلان أن ينتهي
             await page.wait_for_timeout(5000)
             
-            # البحث عن زر التشغيل والنقر عليه
-            play_selectors = [
-                'button[class*="play"]',
-                'div[class*="play"]',
-                'a[class*="play"]',
-                '.play-btn',
-                '.player-play',
-                '.start-button',
-                'button:has-text("Play")',
-                'div:has-text("Play")',
-                'a:has-text("Play")'
-            ]
-            
-            for selector in play_selectors:
-                try:
-                    play_button = await page.query_selector(selector)
-                    if play_button:
-                        await play_button.click()
-                        logger.info("Clicked play button")
-                        await page.wait_for_timeout(3000)
-                        break
-                except:
-                    continue
-            
-            # البحث عن روابط الفيديو
-            logger.info("Searching for video sources...")
-            video_url = await extract_video_from_page(page)
-            
-            if not video_url:
-                # محاولة إيجاد iframes رئيسية
-                iframes = await page.query_selector_all("iframe")
-                for iframe in iframes:
-                    try:
-                        iframe_src = await iframe.get_attribute("src")
-                        if iframe_src:
-                            logger.info(f"Checking iframe: {iframe_src}")
-                            # فتح الiframe في صفحة جديدة
-                            iframe_page = await context.new_page()
-                            await iframe_page.goto(iframe_src, wait_until='networkidle', timeout=30000)
-                            await iframe_page.wait_for_timeout(3000)
-                            
-                            video_url = await extract_video_from_page(iframe_page)
-                            await iframe_page.close()
-                            
-                            if video_url:
-                                break
-                    except Exception as e:
-                        logger.warning(f"Error checking iframe: {e}")
-                        continue
+            # استخراج روابط الفيديو
+            video_urls = await extract_video_urls(page)
             
             await browser.close()
             
-            if video_url:
-                logger.info(f"Found video URL: {video_url}")
+            # اختيار أفضل رابط فيديو
+            best_url = None
+            for url in video_urls:
+                if url and any(ext in url for ext in ['.m3u8', '.mp4']):
+                    best_url = url
+                    break
+            
+            if best_url:
+                logger.info(f"Found video URL: {best_url}")
             else:
-                logger.warning("Could not find video URL")
-                
-            return video_url
+                logger.warning("No video URL found")
+                logger.info(f"All detected URLs: {video_urls}")
+            
+            return best_url
             
         except Exception as e:
             logger.error(f"Error in get_video_url: {e}")
             return None
 
-# ---------------- Main ---------------- #
 async def main():
-    logger.info("Starting Kinovod scraper...")
-    
-    # اختيار عدم استخدام البروكسي مؤقتاً للاختبار
-    working_proxy = None
+    logger.info("Starting advanced Kinovod scraper...")
     
     # قائمة الأفلام للاختبار
     test_movies = [
@@ -225,31 +331,50 @@ async def main():
     
     results = []
     for i, url in enumerate(test_movies):
+        logger.info(f"\n{'='*50}")
         logger.info(f"Scraping {i+1}/{len(test_movies)}: {url}")
+        logger.info(f"{'='*50}")
+        
         try:
-            video_url = await get_video_url(url, proxy=working_proxy)
-            results.append({"url": url, "video": video_url})
+            start_time = time.time()
+            video_url = await get_video_url(url)
+            end_time = time.time()
+            
+            results.append({
+                "url": url,
+                "video": video_url,
+                "time_taken": round(end_time - start_time, 2)
+            })
             
             if video_url:
-                logger.info(f"✅ Success: Found video URL")
+                logger.info(f"✅ SUCCESS: Found video URL in {end_time - start_time:.2f}s")
             else:
-                logger.warning("❌ Failed: No video URL found")
+                logger.warning(f"❌ FAILED: No video URL found in {end_time - start_time:.2f}s")
                 
         except Exception as e:
-            logger.error(f"Error scraping {url}: {e}")
-            results.append({"url": url, "video": None})
+            logger.error(f"💥 ERROR scraping {url}: {e}")
+            results.append({"url": url, "video": None, "error": str(e)})
         
-        await asyncio.sleep(2)  # فترة انتظار بين الطلبات
+        await asyncio.sleep(2)
 
     # حفظ النتائج
     with open("video_links.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
     
-    logger.info("Results saved to video_links.json")
+    logger.info("\n" + "="*60)
+    logger.info("FINAL RESULTS:")
+    logger.info("="*60)
     
-    # عرض ملخص النتائج
-    success_count = sum(1 for r in results if r["video"])
-    logger.info(f"Scraping completed: {success_count}/{len(results)} successful")
+    success_count = sum(1 for r in results if r.get("video"))
+    for i, result in enumerate(results):
+        status = "✅" if result.get("video") else "❌"
+        logger.info(f"{status} {i+1}. {result['url']}")
+        if result.get("video"):
+            logger.info(f"   📹 {result['video']}")
+        if result.get("error"):
+            logger.info(f"   ⚠️ Error: {result['error']}")
+    
+    logger.info(f"\n🎯 Success rate: {success_count}/{len(results)}")
 
 if __name__ == "__main__":
     asyncio.run(main())
