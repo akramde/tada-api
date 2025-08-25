@@ -21,8 +21,9 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install requests beautifulsoup4 playwright PyQt5
+          pip install requests beautifulsoup4 playwright
           playwright install chromium
+          playwright install-deps
 
       - name: Run video scraper
         run: python scraper_videos.py
