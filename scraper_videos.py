@@ -35,21 +35,42 @@ def test_proxy(proxy, test_url="https://kinovod240825.pro/films"):
         pass
     return False
 
+# ---------------- Video Scraper ---------------- #
 async def get_video_url(movie_url, proxy=None):
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, proxy={"server": proxy} if proxy else None)
+        browser = await p.chromium.launch(
+            headless=True,
+            proxy={"server": proxy} if proxy else None
+        )
         page = await browser.new_page()
-        await page.goto(movie_url, timeout=60000)
 
         try:
-            iframe_elem = await page.wait_for_selector("iframe", timeout=20000)
-        except:
+            await page.goto(movie_url, timeout=60000)
+        except Exception as e:
+            print(f"❌ Failed to open page {movie_url}: {e}")
             await browser.close()
             return None
 
-        iframe_url = await iframe_elem.get_attribute("src")
-        iframe_page = await browser.new_page()
-        await iframe_page.goto(iframe_url, timeout=60000)
+        try:
+            iframe_elem = await page.wait_for_selector("iframe", timeout=20000)
+            iframe_url = await iframe_elem.get_attribute("src")
+            if not iframe_url:
+                print("❌ iframe src is empty or blocked")
+                await browser.close()
+                return None
+        except Exception as e:
+            print(f"❌ No iframe found or blocked: {e}")
+            await browser.close()
+            return None
+
+        # افتح iframe page
+        try:
+            iframe_page = await browser.new_page()
+            await iframe_page.goto(iframe_url, timeout=60000)
+        except Exception as e:
+            print(f"❌ Failed to open iframe page: {e}")
+            await browser.close()
+            return None
 
         video_url = None
         try:
@@ -85,16 +106,21 @@ async def main():
     if not working_proxy:
         print("❌ No working RU proxy found, will try without proxy")
 
-    # 2️⃣ روابط الأفلام (تقدر تستبدلها بالملفات الأخرى)
+    # 2️⃣ روابط الأفلام / المسلسلات
     movies = [
-        f"{BASE_URL}/film/240006-pampa",
+        f"{BASE_URL}/film/240006-pampa",  # مثال فيلم واحد
+        # أضف المزيد من الروابط أو اقرأها من movies.json
     ]
 
     results = []
     for url in movies:
         print(f"🎬 Scraping {url} ...")
-        video = await get_video_url(url, proxy=working_proxy)
-        results.append({"url": url, "video": video})
+        try:
+            video = await get_video_url(url, proxy=working_proxy)
+            results.append({"url": url, "video": video})
+        except Exception as e:
+            print(f"❌ Error scraping {url}: {e}")
+            results.append({"url": url, "video": None})
 
     # 3️⃣ حفظ النتائج
     with open("video_links.json", "w", encoding="utf-8") as f:
