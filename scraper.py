@@ -3,8 +3,15 @@ from bs4 import BeautifulSoup
 import json
 import re
 import time
+from datetime import datetime, timedelta
 
-BASE_URL = "https://kinovod240825.pro"
+# حساب تاريخ البارحة وتحويله لصيغة ddmmyy
+yesterday = datetime.now() - timedelta(days=1)
+date_str = yesterday.strftime("%d%m%y")
+
+# بناء الرابط الديناميكي
+BASE_URL = f"https://kinovod{date_str}.pro"
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -89,4 +96,4 @@ if __name__ == "__main__":
     all_movies = scrape_all()
     with open("videos.json", "w", encoding="utf-8") as f:
         json.dump(all_movies, f, ensure_ascii=False, indent=2)
-    print(f"✅ Done! Total movies: {len(all_movies)}")
+    print(f"✅ Done! Total movies: {len(all_movies)} from {BASE_URL}")
