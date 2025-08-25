@@ -1,14 +1,44 @@
 import json
 import asyncio
+import requests
+from bs4 import BeautifulSoup
 from playwright.async_api import async_playwright
 
 BASE_URL = "https://kinovod240825.pro"
 
-async def get_video_url(movie_url):
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+# ---------------- Proxy ---------------- #
+def get_russian_proxies():
+    url = "https://free-proxy-list.net/"
+    resp = requests.get(url, timeout=10)
+    resp.raise_for_status()
+    soup = BeautifulSoup(resp.text, "html.parser")
 
+    proxies = []
+    rows = soup.select("table tbody tr")
+    for row in rows:
+        cols = row.find_all("td")
+        if len(cols) < 7:
+            continue
+        ip = cols[0].text.strip()
+        port = cols[1].text.strip()
+        code = cols[2].text.strip()
+        if code == "RU":
+            proxies.append(f"http://{ip}:{port}")
+    return proxies
+
+def test_proxy(proxy, test_url="https://kinovod240825.pro/films"):
+    try:
+        resp = requests.get(test_url, proxies={"http": proxy, "https": proxy}, timeout=10)
+        if resp.status_code == 200:
+            return True
+    except:
+        pass
+    return False
+
+async def get_video_url(movie_url, proxy=None):
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True, proxy={"server": proxy} if proxy else None)
+        page = await browser.new_page()
         await page.goto(movie_url, timeout=60000)
 
         try:
@@ -18,7 +48,6 @@ async def get_video_url(movie_url):
             return None
 
         iframe_url = await iframe_elem.get_attribute("src")
-
         iframe_page = await browser.new_page()
         await iframe_page.goto(iframe_url, timeout=60000)
 
@@ -41,24 +70,36 @@ async def get_video_url(movie_url):
         await browser.close()
         return video_url
 
-
+# ---------------- Main ---------------- #
 async def main():
-    # لاحقًا نقدر نقرأ من movies.json أو kids.json
+    # 1️⃣ احصل على بروكسي روسي شغال
+    proxies = get_russian_proxies()
+    print(f"🔍 Found {len(proxies)} Russian proxies")
+    working_proxy = None
+    for proxy in proxies[:20]:
+        print(f"⚡ Testing proxy {proxy} ...")
+        if test_proxy(proxy):
+            working_proxy = proxy
+            print(f"✅ Using working proxy: {working_proxy}")
+            break
+    if not working_proxy:
+        print("❌ No working RU proxy found, will try without proxy")
+
+    # 2️⃣ روابط الأفلام (تقدر تستبدلها بالملفات الأخرى)
     movies = [
-        f"{BASE_URL}/film/240006-pampa",  # مثال فيلم واحد
+        f"{BASE_URL}/film/240006-pampa",
     ]
 
     results = []
     for url in movies:
         print(f"🎬 Scraping {url} ...")
-        video = await get_video_url(url)
+        video = await get_video_url(url, proxy=working_proxy)
         results.append({"url": url, "video": video})
 
+    # 3️⃣ حفظ النتائج
     with open("video_links.json", "w", encoding="utf-8") as f:
         json.dump(results, f, ensure_ascii=False, indent=2)
-
     print("✅ Saved video_links.json")
-
 
 if __name__ == "__main__":
     asyncio.run(main())
