@@ -73,17 +73,17 @@ def scrape_page(path):
 
     return movies
 
-def scrape_all():
-    """Scrape all pages using automatic page numbering until no movies found"""
+def scrape_all(base_path):
+    """Scrape all pages from a given section until no movies found"""
     results = []
     page_num = 1
 
     while True:
-        path = f"/films?page={page_num}"
+        path = f"{base_path}?page={page_num}"
         movies = scrape_page(path)
 
         if not movies:
-            print(f"⚠️ No more movies found. Stopping at page {page_num}")
+            print(f"⚠️ No more items found in {base_path}. Stopping at page {page_num}")
             break
 
         results.extend(movies)
@@ -93,7 +93,22 @@ def scrape_all():
     return results
 
 if __name__ == "__main__":
-    all_movies = scrape_all()
-    with open("videos.json", "w", encoding="utf-8") as f:
+    # الأفلام
+    all_movies = scrape_all("/films")
+    with open("movies.json", "w", encoding="utf-8") as f:
         json.dump(all_movies, f, ensure_ascii=False, indent=2)
-    print(f"✅ Done! Total movies: {len(all_movies)} from {BASE_URL}")
+    print(f"✅ Done! Total movies: {len(all_movies)}")
+
+    # الأطفال (أنيميشن)
+    kids_movies = scrape_all("/animation")
+    with open("kids.json", "w", encoding="utf-8") as f:
+        json.dump(kids_movies, f, ensure_ascii=False, indent=2)
+    print(f"✅ Done! Total kids: {len(kids_movies)}")
+
+    # المسلسلات
+    tvshows = scrape_all("/serials")
+    with open("tvshows.json", "w", encoding="utf-8") as f:
+        json.dump(tvshows, f, ensure_ascii=False, indent=2)
+    print(f"✅ Done! Total tvshows: {len(tvshows)}")
+
+    print(f"🎉 All scraping completed from {BASE_URL}")
