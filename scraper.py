@@ -95,7 +95,7 @@ def scrape_all(base_path):
 if __name__ == "__main__":
     # الأفلام
     all_movies = scrape_all("/films")
-    with open("movies.json", "w", encoding="utf-8") as f:
+    with open("videos.json", "w", encoding="utf-8") as f:
         json.dump(all_movies, f, ensure_ascii=False, indent=2)
     print(f"✅ Done! Total movies: {len(all_movies)}")
 
