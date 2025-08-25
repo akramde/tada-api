@@ -3,7 +3,7 @@ name: Video Link Scraper
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * *"   # يومياً الساعة 03:00 UTC
+    - cron: "0 3 * * *"
 
 jobs:
   scrape:
@@ -20,13 +20,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install playwright
+          pip install --upgrade pip
+          pip install requests beautifulsoup4 playwright
           playwright install chromium
 
       - name: Run video scraper
         run: python scraper_videos.py
 
-      - name: Commit and Push changes
+      - name: Commit and Push results
         run: |
           git config --local user.name "github-actions[bot]"
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
@@ -36,4 +37,3 @@ jobs:
             git push
           else
             echo "No changes detected"
-          fi
