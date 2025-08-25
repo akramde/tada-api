@@ -51,6 +51,7 @@ async def get_video_url(movie_url, proxy=None):
             await browser.close()
             return None
 
+        # محاولة إيجاد iframe
         try:
             iframe_elem = await page.wait_for_selector("iframe", timeout=20000)
             iframe_url = await iframe_elem.get_attribute("src")
@@ -72,6 +73,17 @@ async def get_video_url(movie_url, proxy=None):
             await browser.close()
             return None
 
+        # ---------------- تشغيل الفيديو ---------------- #
+        try:
+            # حاول الضغط على زر Play أو تجاوز الإعلان
+            play_button = await iframe_page.query_selector("button, .play, .start")
+            if play_button:
+                await play_button.click()
+                await asyncio.sleep(5)  # انتظر الفيديو يبدأ
+        except:
+            pass
+
+        # ---------------- استخراج رابط الفيديو ---------------- #
         video_url = None
         try:
             source_elem = await iframe_page.query_selector("video source")
@@ -81,6 +93,7 @@ async def get_video_url(movie_url, proxy=None):
             pass
 
         if not video_url:
+            # أحيانًا يكون في سكربت JS
             scripts = await iframe_page.query_selector_all("script")
             for s in scripts:
                 content = await s.inner_text()
@@ -109,7 +122,7 @@ async def main():
     # 2️⃣ روابط الأفلام / المسلسلات
     movies = [
         f"{BASE_URL}/film/240006-pampa",  # مثال فيلم واحد
-        # أضف المزيد من الروابط أو اقرأها من movies.json
+        # يمكن إضافة المزيد أو قراءة من JSON
     ]
 
     results = []
